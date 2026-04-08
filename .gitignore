@@ -1,0 +1,13 @@
+# Compiled binary
+fstool.exe
+fstool
+
+# Virtual disk (binary file, no need to upload)
+virtual_disk.bin
+
+# VS Code settings
+.vscode/
+
+# Windows junk
+Thumbs.db
+desktop.ini

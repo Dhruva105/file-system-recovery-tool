@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VFS Lab — File System Recovery & Optimization Tool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── TOP NAV ─────────────────────────────────────────── -->
+  <nav class="topnav">
+    <div class="nav-left">
+      <div class="nav-logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">VFS<span class="logo-accent">Lab</span></span>
+      </div>
+      <div class="nav-breadcrumb">
+        <span>Virtual File System</span>
+        <span class="bc-sep">/</span>
+        <span class="bc-active">Recovery & Optimization</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div class="fs-status-badge" id="fsBadge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">CLEAN</span>
+      </div>
+      <div class="nav-stat"><span class="ns-label">Disk</span><span class="ns-val" id="navDisk">4 MB</span></div>
+      <div class="nav-stat"><span class="ns-label">Free</span><span class="ns-val" id="navFree">—</span></div>
+      <div class="nav-stat"><span class="ns-label">Files</span><span class="ns-val" id="navFiles">0</span></div>
+    </div>
+  </nav>
+
+  <!-- ── MAIN LAYOUT ────────────────────────────────────── -->
+  <main class="layout">
+
+    <!-- ── LEFT SIDEBAR: Controls ──────────────────────── -->
+    <aside class="sidebar">
+
+      <section class="panel" id="panel-ops">
+        <div class="panel-header">
+          <span class="panel-icon">⬡</span>
+          <span class="panel-title">File Operations</span>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Filename</label>
+          <input type="text" id="fname" placeholder="e.g. report.txt" class="inp" maxlength="27" />
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Content</label>
+          <textarea id="fcontent" placeholder="File content..." class="inp inp-ta" rows="3"></textarea>
+        </div>
+
+        <div class="btn-grid">
+          <button class="btn btn-primary" onclick="App.createFile()">
+            <span class="btn-icon">+</span> Create
+          </button>
+          <button class="btn btn-secondary" onclick="App.writeFile()">
+            <span class="btn-icon">✎</span> Write
+          </button>
+          <button class="btn btn-secondary" onclick="App.readFile()">
+            <span class="btn-icon">◎</span> Read
+          </button>
+          <button class="btn btn-danger-soft" onclick="App.deleteFile()">
+            <span class="btn-icon">✕</span> Delete
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-recovery">
+        <div class="panel-header">
+          <span class="panel-icon">⚡</span>
+          <span class="panel-title">Recovery Module</span>
+        </div>
+        <p class="panel-desc">Simulate a disk crash then repair the file system using fsck or journal replay.</p>
+        <div class="btn-stack">
+          <button class="btn btn-crash" onclick="App.simulateCrash()">
+            <span class="btn-icon">💥</span> Simulate Crash
+          </button>
+          <button class="btn btn-recover" onclick="App.runFsck()">
+            <span class="btn-icon">🔍</span> Run fsck
+          </button>
+          <button class="btn btn-recover" onclick="App.recoverJournal()">
+            <span class="btn-icon">📋</span> Replay Journal
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-opt">
+        <div class="panel-header">
+          <span class="panel-icon">◈</span>
+          <span class="panel-title">Optimization</span>
+        </div>
+        <p class="panel-desc">Compact scattered blocks for sequential access. View LRU cache performance.</p>
+        <div class="btn-stack">
+          <button class="btn btn-opt" onclick="App.defragment()">
+            <span class="btn-icon">⟳</span> Defragment Disk
+          </button>
+          <button class="btn btn-secondary" onclick="App.showCacheStats()">
+            <span class="btn-icon">◑</span> Cache Stats
+          </button>
+        </div>
+
+        <!-- LRU Meter -->
+        <div class="cache-meter" id="cacheMeter" style="display:none">
+          <div class="meter-row">
+            <span class="meter-label">Hit Rate</span>
+            <span class="meter-val" id="cacheHitRate">0%</span>
+          </div>
+          <div class="meter-bar-bg">
+            <div class="meter-bar-fill" id="cacheBar" style="width:0%"></div>
+          </div>
+          <div class="meter-row" style="margin-top:6px">
+            <span class="meter-label">Hits <span id="cacheHits" class="meter-num">0</span></span>
+            <span class="meter-label">Misses <span id="cacheMisses" class="meter-num">0</span></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <span class="panel-icon">↺</span>
+          <span class="panel-title">System</span>
+        </div>
+        <div class="btn-stack">
+          <button class="btn btn-secondary" onclick="App.format()">
+            <span class="btn-icon">⬚</span> Format Disk
+          </button>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- ── CENTER: Disk Map + File Table ──────────────── -->
+    <div class="center-col">
+
+      <!-- Superblock strip -->
+      <div class="superblock-strip" id="sbStrip">
+        <div class="sb-item"><span class="sb-k">Magic</span><span class="sb-v" id="sbMagic">0xDEADBEEF</span></div>
+        <div class="sb-item"><span class="sb-k">Total Blocks</span><span class="sb-v" id="sbTotal">1024</span></div>
+        <div class="sb-item"><span class="sb-k">Block Size</span><span class="sb-v">4096 B</span></div>
+        <div class="sb-item"><span class="sb-k">Free Blocks</span><span class="sb-v" id="sbFree">—</span></div>
+        <div class="sb-item"><span class="sb-k">Free Inodes</span><span class="sb-v" id="sbInodes">—</span></div>
+        <div class="sb-item"><span class="sb-k">FS State</span><span class="sb-v" id="sbState">CLEAN</span></div>
+      </div>
+
+      <!-- Disk Block Map -->
+      <div class="panel panel-disk">
+        <div class="panel-header">
+          <span class="panel-icon">▦</span>
+          <span class="panel-title">Disk Block Map</span>
+          <div class="disk-legend">
+            <span class="leg-item"><span class="leg-dot ld-sys"></span>System</span>
+            <span class="leg-item"><span class="leg-dot ld-free"></span>Free</span>
+            <span class="leg-item"><span class="leg-dot ld-used"></span>Used</span>
+            <span class="leg-item"><span class="leg-dot ld-corrupt"></span>Corrupt</span>
+            <span class="leg-item"><span class="leg-dot ld-journal"></span>Journal</span>
+          </div>
+        </div>
+        <div class="disk-grid" id="diskGrid"></div>
+        <div class="disk-tooltip" id="diskTooltip"></div>
+      </div>
+
+      <!-- File Table -->
+      <div class="panel panel-files">
+        <div class="panel-header">
+          <span class="panel-icon">◻</span>
+          <span class="panel-title">File Table</span>
+          <span class="file-count-badge" id="fileCountBadge">0 files</span>
+        </div>
+        <div class="file-table-wrap">
+          <table class="file-table">
+            <thead>
+              <tr>
+                <th>Inode</th>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Blocks</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="fileTableBody">
+              <tr class="empty-row">
+                <td colspan="6">No files yet. Create one to begin.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── RIGHT: Log + Journal ────────────────────────── -->
+    <div class="right-col">
+
+      <!-- Terminal Log -->
+      <div class="panel panel-log">
+        <div class="panel-header">
+          <span class="panel-icon">▶</span>
+          <span class="panel-title">System Log</span>
+          <button class="clear-btn" onclick="App.clearLog()">Clear</button>
+        </div>
+        <div class="log-body" id="logBody">
+          <div class="log-entry log-info">
+            <span class="log-time">00:00</span>
+            <span class="log-msg">VFS Lab initialized. Virtual disk mounted.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Journal Log -->
+      <div class="panel panel-journal">
+        <div class="panel-header">
+          <span class="panel-icon">📓</span>
+          <span class="panel-title">Journal Log</span>
+        </div>
+        <div class="journal-body" id="journalBody">
+          <div class="journal-empty">No journal entries yet.</div>
+        </div>
+      </div>
+
+      <!-- Read output modal -->
+      <div class="panel panel-read" id="readPanel" style="display:none">
+        <div class="panel-header">
+          <span class="panel-icon">◎</span>
+          <span class="panel-title">File Contents</span>
+          <button class="clear-btn" onclick="document.getElementById('readPanel').style.display='none'">✕</button>
+        </div>
+        <div class="read-body" id="readBody"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ── TOAST NOTIFICATION ──────────────────────────── -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
